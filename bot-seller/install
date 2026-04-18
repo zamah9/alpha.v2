@@ -1,0 +1,177 @@
+# 1. BUAT FOLDER PENAMPUNG
+mkdir -p /usr/local/sbin/alpha-vps
+
+# 2. PINDAHKAN SCRIPT SELLER (JIKA SUDAH ADA) KE FOLDER BARU
+if [ -f /usr/local/sbin/mbot-seller ]; then
+    mv /usr/local/sbin/mbot-seller /usr/local/sbin/alpha-vps/mbot-seller
+fi
+
+# 3. BUAT/UPDATE SCRIPT MENU UTAMA (M-BOT) DI FOLDER BARU
+# (Script ini sudah saya update agar memanggil mbot-seller di lokasi baru)
+cat << 'EOF' > /usr/local/sbin/alpha-vps/m-bot
+#!/bin/bash
+
+# =============================================
+#            [ Konfigurasi Awal ]
+# =============================================
+clear
+export RED='\033[0;31m'
+export GREEN='\033[0;32m'
+export YELLOW='\033[0;33m'
+export BLUE='\033[0;34m'
+export CYAN='\033[0;36m'
+export NC='\033[0m'
+export WH='\033[1;37m'
+
+# =============================================
+#            [ Konfigurasi URL & Izin ]
+# =============================================
+IPVPES="https://raw.githubusercontent.com/zamah9/ijin/refs/heads/main/alpha"
+MYIP=$(curl -sS ipv4.icanhazip.com)
+DATE_SERVER=$(curl -v --insecure --silent https://google.com/ 2>&1 | grep Date | sed -e 's/< Date: //')
+TODAY=$(date +"%Y-%m-%d" -d "$DATE_SERVER")
+
+# =============================================
+#            [ Fungsi Pengecekan ]
+# =============================================
+checking_sc() {
+    local useexp=$(wget -qO- $IPVPES | grep $MYIP | awk '{print $3}')
+    local client_name=$(wget -qO- $IPVPES | grep $MYIP | awk '{print $2}')
+    
+    if [[ "$TODAY" < "$useexp" ]]; then
+        EXP_DATE=$useexp
+        CLIENT_NAME=$client_name
+        current_epoch=$(date +%s)
+        exp_epoch=$(date -d "$useexp" +%s)
+        days_remaining=$(( (exp_epoch - current_epoch) / 86400 ))
+        return 0
+    else
+        clear
+        echo -e "\033[1;93m────────────────────────────────────────────\033[0m"
+        echo -e "\033[42m          404 NOT FOUND AUTOSCRIPT          \033[0m"
+        echo -e "\033[1;93m────────────────────────────────────────────\033[0m"
+        echo -e ""
+        echo -e "             ${RED}PERMISSION DENIED !${NC}"
+        echo -e "   \033[0;33mYour VPS${NC} $MYIP \033[0;33mHas been Banned${NC}"
+        echo -e "     \033[0;33mBuy access permissions for scripts${NC}"
+        echo -e "             \033[0;33mContact Admin :${NC}"
+        echo -e "       ${GREEN}Telegram${NC} https://t.me/hokagelegend1"
+        echo -e "\033[1;93m────────────────────────────────────────────\033[0m"
+        exit 1
+    fi
+}
+checking_sc
+
+# =============================================
+#            [ Fungsi Tampilan Menu ]
+# =============================================
+show_main_menu() {
+    clear
+    # --- DATA SISTEM ---
+    MODEL2=$(cat /etc/os-release | grep -w PRETTY_NAME | head -n1 | sed 's/[=PRETTY_NAME"]//g')
+    LOADCPU=$(printf '%-0.1f' "$(top -bn1 | awk '/Cpu/ { print 100 - $8 }')")
+    CORE=$(nproc)
+    tram=$(free -h | awk '/Mem:/ {print $2}')
+    uram=$(free -h | awk '/Mem:/ {print $3}')
+    ISP=$(curl -s ipinfo.io/org | cut -d ' ' -f 2-10)
+    CITY=$(curl -s ipinfo.io/city)
+    SERONLINE=$(uptime -p | cut -d " " -f 2-)
+
+    # --- STATUS SERVICE ---
+    if systemctl is-active --quiet xray; then status_xray="${GREEN}ON${NC}"; else status_xray="${RED}OFF${NC}"; fi
+    if systemctl is-active --quiet nginx; then status_nginx="${GREEN}ON${NC}"; else status_nginx="${RED}OFF${NC}"; fi
+    if /etc/init.d/dropbear status >/dev/null 2>&1; then status_beruangjatuh="${GREEN}ON${NC}"; else status_beruangjatuh="${RED}OFF${NC}"; fi
+    
+    # --- SSH WS ---
+    ssh_ws_proc=$(systemctl status ws | grep Active | awk '{print $3}' | sed 's/(//g' | sed 's/)//g')
+    if [[ $ssh_ws_proc == "running" ]]; then status_ws="${GREEN}ON${NC}"; else status_ws="${RED}OFF${NC}"; fi
+
+    # --- STATUS BOT (Check 'alpha-store' service) ---
+    if systemctl is-active --quiet alpha-store; then 
+        status_bot="${GREEN}ON${NC}"
+    else 
+        status_bot="${RED}OFF${NC}"
+    fi
+
+    # --- TAMPILAN PANEL ---
+    echo -e "$GREEN╭═══════════════════════════════════════════════════╮${NC}"
+    echo -e "$GREEN│${NC} ${WH}           • ALPHA SCRIPT TELEGRAM PRO •         ${NC} $GREEN│${NC}"
+    echo -e "$GREEN╰═══════════════════════════════════════════════════╯${NC}"
+    echo -e "$GREEN╭═══════════════════════════════════════════════════╮${NC}"
+    echo -e "$GREEN│ ${WH}Client Name    : ${GREEN}${CLIENT_NAME:-User}${NC}"
+    echo -e "$GREEN│ ${WH}Days Remaining : ${GREEN}${days_remaining} hari${NC}"
+    echo -e "$GREEN├───────────────────────────────────────────────────┤${NC}"
+    echo -e "$GREEN│ ${WH}System OS      : ${CYAN}$MODEL2${NC}"
+    echo -e "$GREEN│ ${WH}Memory Usage   : ${CYAN}$uram / $tram${NC}"
+    echo -e "$GREEN│ ${WH}CPU Usage      : ${CYAN}$LOADCPU% (${CORE} Core)${NC}"
+    echo -e "$GREEN│ ${WH}ISP / City     : ${CYAN}$ISP / $CITY${NC}"
+    echo -e "$GREEN│ ${WH}IP-VPS         : ${CYAN}$MYIP${NC}"
+    echo -e "$GREEN│ ${WH}Uptime         : ${CYAN}$SERONLINE${NC}"
+    echo -e "$GREEN╰═══════════════════════════════════════════════════╯${NC}"
+    
+    # --- PANEL STATUS SERVER ---
+    echo -e "$BLUE╔════════════════════════════════════════════════════╗${NC}"
+    echo -e "$BLUE║${CYAN}     🚀    S T A T U S   S E R V E R    🚀           ${BLUE}║${NC}"
+    echo -e "$BLUE╠════════════════════════════════════════════════════╣${NC}"
+    echo -e "$BLUE║${WH}🌐WS:$status_ws |${WH}⚡XRAY:$status_xray | ${WH}🖥️ NGINX:$status_nginx |${WH}🔒DB:$status_beruangjatuh | ${WH}🤖BOT:$status_bot${BLUE} ║${NC}"
+    echo -e "$BLUE╚════════════════════════════════════════════════════╝${NC}"
+
+    # --- MENU UTAMA ---
+    echo -e "$GREEN╭═══════════════════════════════════════════════════╮${NC}"
+    echo -e "$GREEN│                   ${WH}MENU UTAMA${NC}                       ${GREEN}│${NC}"
+    echo -e "$GREEN├───────────────────────────────────────────────────┤${NC}"
+    echo -e "$GREEN│ ${WH}[1] Menu BOT Panel (Install/Setup)              ${GREEN}│${NC}"
+    echo -e "$GREEN│ ${WH}[2] Menu BOT Notifikasi                         ${GREEN}│${NC}"
+    echo -e "$GREEN│ ${WH}[3] Menu BOT Backup                             ${GREEN}│${NC}"
+    echo -e "$GREEN│ ${WH}[4] Menu BOT Seller (Jualan SSH/Xray)           ${GREEN}│${NC}"
+    echo -e "$GREEN│ ${WH}[x] Exit Menu BOT                               ${GREEN}│${NC}"
+    echo -e "$GREEN╰═══════════════════════════════════════════════════╯${NC}"
+    echo -ne "  ${WH}Select From Options [ 1 - 4 or x ] : ${NC}"
+}
+
+# =============================================
+#            [ Loop Menu Utama ]
+# =============================================
+while true; do
+    show_main_menu
+    read -r menu
+    case $menu in
+        1) clear ; checking_sc ; mbot-panel ;;
+        2) clear ; checking_sc ; bot ;;
+        3) 
+            clear ; checking_sc 
+            echo -e "\n${YELLOW}Note: ${NC}"
+            echo -e "Sebelum Menggunakan BOT Backup"
+            echo -e "Harap Setup Dulu ID & Bot Token Kamu !"
+            sleep 2
+            mbot-backup
+            ;;
+        4)
+            clear ; checking_sc
+            echo -e "\n${YELLOW}Membuka Menu Bot Seller...${NC}"
+            sleep 1
+            # CALLING SCRIPT DI LOKASI BARU
+            /usr/local/sbin/alpha-vps/mbot-seller
+            ;;
+        x|X) echo -e "\n${RED}Keluar dari menu...${NC}" ; exit 0 ;;
+        *) echo -e "\n${RED}Pilihan tidak valid!${NC}" ; sleep 1 ;;
+    esac
+done
+EOF
+
+# 4. MEMBERSIHKAN FORMAT & MEMBERI IZIN EKSEKUSI
+sed -i 's/\r$//' /usr/local/sbin/alpha-vps/m-bot
+sed -i 's/\r$//' /usr/local/sbin/alpha-vps/mbot-seller
+chmod +x /usr/local/sbin/alpha-vps/m-bot
+chmod +x /usr/local/sbin/alpha-vps/mbot-seller
+
+# 5. MEMBUAT SHORTCUT (ALIAS)
+# Agar bisa dipanggil dengan 'menu' atau 'mbot' atau 'mbot-seller' dari mana saja
+ln -sf /usr/local/sbin/alpha-vps/m-bot /usr/bin/menu
+ln -sf /usr/local/sbin/alpha-vps/m-bot /usr/bin/m-bot
+ln -sf /usr/local/sbin/alpha-vps/mbot-seller /usr/bin/mbot-seller
+
+echo -e "\033[32m✅ Setup Folder Selesai!\033[0m"
+echo -e "Folder Script: \033[36m/usr/local/sbin/alpha-vps/\033[0m"
+echo -e "Ketik \033[33mmenu\033[0m untuk membuka Menu Utama."
+echo -e "Ketik \033[33mmbot-seller\033[0m untuk membuka Menu Seller."

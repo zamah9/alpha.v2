@@ -1,0 +1,125 @@
+#!/bin/bash
+
+# =============================================
+#            [ Konfigurasi Warna ]
+# =============================================
+export RED='\033[0;31m'
+export GREEN='\033[0;32m'
+export YELLOW='\033[0;33m'
+export BLUE='\033[0;34m'
+export CYAN='\033[0;36m'
+export NC='\033[0m'
+export WH='\033[1;37m'
+
+# =============================================
+#            [ Fungsi Install Dependensi ]
+# =============================================
+install_dependensi() {
+    clear
+    echo -e "${YELLOW}=== INSTALL DEPENDENSI PYTHON ===${NC}"
+    
+    # 1. Install PIP Khusus Python 3.8 (Fix Error Ubuntu 20.04)
+    echo -e "${CYAN}[1/3] Memperbaiki PIP...${NC}"
+    rm -rf /usr/lib/python3/dist-packages/OpenSSL
+    rm -rf /usr/lib/python3/dist-packages/pyOpenSSL-*.egg-info
+    apt update && apt install curl -y
+    curl https://bootstrap.pypa.io/pip/3.8/get-pip.py -o get-pip.py
+    python3 get-pip.py
+    rm -f get-pip.py
+    
+    # 2. Install Module
+    echo -e "${CYAN}[2/3] Menginstall Module Bot...${NC}"
+    pip3 install pyTelegramBotAPI paramiko requests telethon cryptography
+    
+    # 3. Buat Service
+    echo -e "${CYAN}[3/3] Membuat Service Systemd...${NC}"
+    cat > /etc/systemd/system/alpha-store.service << END
+[Unit]
+Description=Alpha Script Store Bot
+After=network.target
+
+[Service]
+WorkingDirectory=/etc/alpha-store
+ExecStart=/usr/bin/python3 store.py
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
+END
+
+    systemctl daemon-reload
+    systemctl enable alpha-store
+    systemctl restart alpha-store
+    
+    echo -e "${GREEN}✅ Instalasi Selesai! Bot sudah berjalan.${NC}"
+    read -n 1 -s -r -p "Tekan tombol apa saja untuk kembali..."
+}
+
+# =============================================
+#            [ Fungsi Setup Data Config ]
+# =============================================
+setup_data_store() {
+    clear
+    echo -e "${CYAN}=== SETUP DATA BOT STORE ===${NC}"
+    echo -e "Masukkan Data dari @BotFather dan ID Telegram Anda.\n"
+    
+    read -p "Masukkan Bot Token : " bot_token
+    read -p "Masukkan ID Admin  : " admin_id
+    read -p "Masukkan Domain VPS: " domain_vps
+    
+    mkdir -p /etc/alpha-store
+    cat > /etc/alpha-store/config.json << END
+{
+    "bot_token": "$bot_token",
+    "admin_id": "$admin_id",
+    "domain": "$domain_vps"
+}
+END
+    echo -e "${GREEN}Data tersimpan! Merestart Bot...${NC}"
+    systemctl restart alpha-store
+    sleep 2
+}
+
+# =============================================
+#            [ Tampilan Menu Seller ]
+# =============================================
+show_seller_menu() {
+    clear
+    # Cek Status
+    if systemctl is-active --quiet alpha-store; then 
+        status_store="${GREEN}ON (RUNNING)${NC}"
+    else 
+        status_store="${RED}OFF (STOPPED)${NC}"
+    fi
+
+    echo -e "$GREEN╭═══════════════════════════════════════════════════╮${NC}"
+    echo -e "$GREEN│${NC} ${WH}         • ALPHA STORE MANAGER PRO •           ${NC} $GREEN│${NC}"
+    echo -e "$GREEN╰═══════════════════════════════════════════════════╯${NC}"
+    echo -e "$BLUE╔════════════════════════════════════════════════════╗${NC}"
+    echo -e "$BLUE║${WH}    STATUS SERVICE BOT STORE : $status_store       ${BLUE}║${NC}"
+    echo -e "$BLUE╚════════════════════════════════════════════════════╝${NC}"
+    echo -e "$GREEN╭═══════════════════════════════════════════════════╮${NC}"
+    echo -e "$GREEN│ ${WH}[1] Install Dependensi & Service (Wajib Awal)   ${GREEN}│${NC}"
+    echo -e "$GREEN│ ${WH}[2] Setup Token & Admin ID                      ${GREEN}│${NC}"
+    echo -e "$GREEN│ ${WH}[3] Start/Restart Bot Store                     ${GREEN}│${NC}"
+    echo -e "$GREEN│ ${WH}[4] Stop Bot Store                              ${GREEN}│${NC}"
+    echo -e "$GREEN│ ${WH}[5] Cek Log Bot (Live Debug)                    ${GREEN}│${NC}"
+    echo -e "$GREEN│ ${WH}[x] Kembali ke Menu Utama                       ${GREEN}│${NC}"
+    echo -e "$GREEN╰═══════════════════════════════════════════════════╯${NC}"
+    echo -ne "  ${WH}Pilih Opsi [1-5 or x] : ${NC}"
+}
+
+while true; do
+    show_seller_menu
+    read -r opt
+    case $opt in
+        1) install_dependensi ;;
+        2) setup_data_store ;;
+        3) echo -e "${YELLOW}Restarting...${NC}" ; systemctl restart alpha-store ; sleep 2 ;;
+        4) echo -e "${RED}Stopping...${NC}" ; systemctl stop alpha-store ; sleep 2 ;;
+        5) journalctl -u alpha-store -n 20 -f ;;
+        x|X) exit 0 ;;
+        *) echo -e "${RED}Pilihan tidak valid!${NC}" ; sleep 1 ;;
+    esac
+done
