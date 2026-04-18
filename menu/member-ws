@@ -1,0 +1,81 @@
+#!/bin/bash
+# //====================================================
+# //     System Request:Debian 9+/Ubuntu 18.04+/20+
+# //     Remodified by: Gemini for User (Color Fix)
+# //====================================================
+
+# --- DEFINISI WARNA ---
+# Menggunakan format yang aman untuk echo -e
+BIBlack='\033[1;90m'      
+BIRed='\033[1;91m'        
+BIGreen='\033[1;92m'      
+BIYellow='\033[1;93m'     
+BIBlue='\033[1;94m'       
+BIPurple='\033[1;95m'     
+BICyan='\033[1;96m'       
+BIWhite='\033[1;97m'      
+NC='\033[0m'              
+
+# --- VALIDASI & JUDUL ---
+ipsaya=$(wget -qO- ipinfo.io/ip)
+domain=$(cat /etc/xray/domain)
+clear
+
+# --- HEADER STYLE ---
+echo -e "${BICyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BIPurple}           ⚡  PREMIUM VMESS MONITOR  ⚡           ${NC}"
+echo -e "${BICyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BIWhite}  Domain   : ${BIYellow}$domain${NC}"
+echo -e "${BIWhite}  IP VPS   : ${BIYellow}$ipsaya${NC}"
+echo -e "${BICyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+# --- LOGIC UTAMA ---
+echo -n > /var/log/xray/accsess.log
+data=( `cat /etc/xray/config.json | grep '###' | cut -d ' ' -f 2 | sort | uniq`);
+
+total_akun=0
+for user in "${data[@]}"
+do
+    # 1. FIX PATH
+    if [[ -e /etc/vmess/${user} ]]; then
+        byte_quota=$(cat /etc/vmess/${user})
+        
+        # 2. LOGIC WARNA QUOTA
+        if [[ "$byte_quota" -eq 0 ]]; then
+             tampil_quota="${BIGreen}Unlimited${NC}"
+        else
+             gb_quota=$((byte_quota / 1024 / 1024 / 1024))
+             if [[ "$gb_quota" -eq 0 ]]; then
+                mb_quota=$((byte_quota / 1024 / 1024))
+                tampil_quota="${BIYellow}${mb_quota} MB${NC}"
+             else
+                tampil_quota="${BIYellow}${gb_quota} GB${NC}"
+             fi
+        fi
+    else
+        tampil_quota="${BIGreen}Unlimited${NC}"
+    fi
+
+    # Cek Akun Aktif
+    jum=$(cat /etc/xray/config.json | grep -c '###' | awk '{print $1/2}')
+    
+    if [[ $jum -gt 0 ]]; then
+        total_akun=$((total_akun + 1))
+        exp=$(grep -wE "^### $user" "/etc/xray/config.json" | cut -d ' ' -f 3 | sort | uniq)
+        
+        # --- TAMPILAN PER USER (FIXED) ---
+        # Menggunakan echo -e dengan spasi manual agar warna terbaca sempurna
+        echo -e "${BIWhite}  User     : ${BICyan}$user${NC}"
+        echo -e "${BIWhite}  Limit    : $tampil_quota"
+        echo -e "${BIWhite}  Expired  : ${BIRed}$exp${NC}"
+        echo -e "${BIBlack}──────────────────────────────────────────────────${NC}"
+    fi
+done
+
+# --- FOOTER ---
+echo ""
+echo -e "${BICyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BIWhite}  Total Member : ${BIPurple}$total_akun Account${NC}"
+echo -e "${BICyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""

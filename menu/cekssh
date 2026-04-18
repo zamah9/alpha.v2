@@ -1,0 +1,141 @@
+#!/bin/bash
+
+# ===============================================
+# Skrip untuk menampilkan sesi login aktif
+# Versi dengan tampilan modern, gradasi warna,
+# ikon, dan efek blink untuk user aktif
+# ===============================================
+
+# Warna dan Format
+BOLD='\033[1m'
+NC='\033[0m'
+BLINK='\033[5m'
+# Gradasi Warna Ungu-Biru
+COLOR1='\033[38;5;93m'  # Ungu
+COLOR2='\033[38;5;105m' # Ungu Muda
+COLOR3='\033[38;5;111m' # Biru Ungu
+COLOR4='\033[38;5;117m' # Biru Terang
+HEADER_BG='\033[48;5;236m' # Latar abu-abu gelap untuk header
+
+# Ikon
+ICON_USER='\xF0\x9F\x94\x91'  # Ikon kunci
+ICON_SSH='\xF0\x9F\x9A\x80'    # Ikon roket
+ICON_DB='\xF0\x9F\x90\x9B'     # Ikon lebah (Dropbear)
+ICON_VPN='\xF0\x9F\x93\xA3'    # Ikon sinyal
+ICON_ACTIVE='\xF0\x9F\x94\x94' # Ikon api (untuk aktif)
+
+# --- Fungsi untuk Header Gradasi ---
+function print_header {
+  echo -e "${COLOR1}╭──────────────────────────────────────────────────────╮${NC}"
+  echo -e "${COLOR1}│${HEADER_BG}${BOLD}${COLOR4}   S E S S I O N   M O N I T O R   ${NC}${COLOR1}│${NC}"
+  echo -e "${COLOR1}╰──────────────────────────────────────────────────────╯${NC}"
+}
+
+# --- Fungsi untuk Garis Pembatas Gradasi ---
+function print_line {
+  echo -e "${COLOR1}├${COLOR2}────────────────────────────────────────────────────${COLOR1}┤${NC}"
+}
+
+function print_footer {
+  echo -e "${COLOR1}╰──────────────────────────────────────────────────────╯${NC}"
+}
+
+clear
+echo ""
+print_header
+echo ""
+
+# Menentukan file log yang digunakan
+if [ -e "/var/log/auth.log" ]; then
+    LOG="/var/log/auth.log";
+elif [ -e "/var/log/secure" ]; then
+    LOG="/var/log/secure";
+else
+    echo -e "${BOLD}\n${RED}File log /var/log/auth.log atau /var/log/secure tidak ditemukan.${NC}\n"
+    exit 1
+fi
+
+# ===========================================
+#  Sesi Dropbear Aktif
+# ===========================================
+echo -e "${BOLD}${COLOR1}╭──────────────────────────────────────────────────────╮${NC}"
+echo -e "${BOLD}${HEADER_BG}${COLOR4}  ${ICON_DB}  Dropbear Active Sessions  ${NC}"
+echo -e "${BOLD}${COLOR1}├──────────────────────────────────────────────────────┤${NC}"
+printf "${COLOR2} %-5s | %-12s | %-15s | %-8s ${NC}\n" "PID" "Username" "IP Address" "Status"
+echo -e "${BOLD}${COLOR1}├──────────────────────────────────────────────────────┤${NC}"
+data=( `ps aux | grep -i dropbear | awk '{print $2}'`);
+cat $LOG | grep -i dropbear | grep -i "Password auth succeeded" > /tmp/login-db-dropbear.txt;
+for PID in "${data[@]}"
+do
+    cat /tmp/login-db-dropbear.txt | grep "dropbear\[$PID\]" > /tmp/login-db-pid.txt;
+    NUM=`cat /tmp/login-db-pid.txt | wc -l`;
+    if [ $NUM -eq 1 ]; then
+        USER=`cat /tmp/login-db-pid.txt | awk '{print $10}'`;
+        IP=`cat /tmp/login-db-pid.txt | awk '{print $12}'`;
+        printf " ${COLOR3}%-5s | %-12s | ${BLINK}${COLOR4}%-15s${NC}${COLOR3} | ${BOLD}${COLOR4}Aktif${NC} ${ICON_ACTIVE}\n" "$PID" "$USER" "$IP"
+    fi
+done
+echo -e "${BOLD}${COLOR1}╰──────────────────────────────────────────────────────╯${NC}"
+
+# ===========================================
+#  Sesi SSHD (OpenSSH) Aktif
+# ===========================================
+echo ""
+echo -e "${BOLD}${COLOR1}╭──────────────────────────────────────────────────────╮${NC}"
+echo -e "${BOLD}${HEADER_BG}${COLOR4}  ${ICON_SSH}  OpenSSH Active Sessions  ${NC}"
+echo -e "${BOLD}${COLOR1}├──────────────────────────────────────────────────────┤${NC}"
+printf "${COLOR2} %-5s | %-12s | %-15s | %-8s ${NC}\n" "PID" "Username" "IP Address" "Status"
+echo -e "${BOLD}${COLOR1}├──────────────────────────────────────────────────────┤${NC}"
+cat $LOG | grep -i sshd | grep -i "Accepted password for" > /tmp/login-db-sshd.txt
+data=( `ps aux | grep "sshd: " | grep -v grep | awk '{print $2}'`);
+
+for PID in "${data[@]}"
+do
+    cat /tmp/login-db-sshd.txt | grep "sshd\[$PID\]" > /tmp/login-db-pid.txt;
+    NUM=`cat /tmp/login-db-pid.txt | wc -l`;
+    if [ $NUM -eq 1 ]; then
+        USER=`grep -oP 'Accepted password for \K\S+' /tmp/login-db-pid.txt`;
+        IP=`grep -oP 'from \K[\d\.]+' /tmp/login-db-pid.txt`;
+        printf " ${COLOR3}%-5s | %-12s | ${BLINK}${COLOR4}%-15s${NC}${COLOR3} | ${BOLD}${COLOR4}Aktif${NC} ${ICON_ACTIVE}\n" "$PID" "$USER" "$IP"
+    fi
+done
+echo -e "${BOLD}${COLOR1}╰──────────────────────────────────────────────────────╯${NC}"
+
+# ===========================================
+#  Sesi OpenVPN (TCP & UDP) Aktif
+# ===========================================
+if [ -f "/etc/openvpn/server/openvpn-tcp.log" ] || [ -f "/etc/openvpn/server/openvpn-udp.log" ]; then
+    echo ""
+    echo -e "${BOLD}${COLOR1}╭──────────────────────────────────────────────────────╮${NC}"
+    echo -e "${BOLD}${HEADER_BG}${COLOR4}  ${ICON_VPN}  OpenVPN Active Sessions  ${NC}"
+    echo -e "${BOLD}${COLOR1}├──────────────────────────────────────────────────────┤${NC}"
+    printf "${COLOR2} %-12s | %-15s | %-8s | %-8s ${NC}\n" "Username" "IP Address" "Connected" "Status"
+    echo -e "${BOLD}${COLOR1}├──────────────────────────────────────────────────────┤${NC}"
+fi
+
+# OpenVPN TCP
+if [ -f "/etc/openvpn/server/openvpn-tcp.log" ]; then
+    cat /etc/openvpn/server/openvpn-tcp.log | grep -w "^CLIENT_LIST" | cut -d ',' -f 2,3,8 | sed -e 's/,/ | /g' | while read line; do
+        printf " ${COLOR3}%s | ${BLINK}${COLOR4}Aktif${NC} ${ICON_ACTIVE}\n" "$line"
+    done
+fi
+
+# OpenVPN UDP
+if [ -f "/etc/openvpn/server/openvpn-udp.log" ]; then
+    cat /etc/openvpn/server/openvpn-udp.log | grep -w "^CLIENT_LIST" | cut -d ',' -f 2,3,8 | sed -e 's/,/ | /g' | while read line; do
+        printf " ${COLOR3}%s | ${BLINK}${COLOR4}Aktif${NC} ${ICON_ACTIVE}\n" "$line"
+    done
+fi
+
+if [ -f "/etc/openvpn/server/openvpn-tcp.log" ] || [ -f "/etc/openvpn/server/openvpn-udp.log" ]; then
+    echo -e "${BOLD}${COLOR1}╰──────────────────────────────────────────────────────╯${NC}"
+fi
+
+echo ""
+echo -e "${BOLD}${COLOR1}╭──────────────────────────────────────────────────────╮${NC}"
+echo -e "${COLOR3} Total Active Sessions: ${BOLD}${BLINK}${COLOR4}$(who | wc -l)${NC}${COLOR3} ${ICON_USER}${NC}"
+echo -e "${BOLD}${COLOR1}╰──────────────────────────────────────────────────────╯${NC}"
+echo ""
+
+# Membersihkan file temporer
+rm -f /tmp/login-db-*.txt /tmp/login-db-pid.txt /tmp/vpn-login-*.txt

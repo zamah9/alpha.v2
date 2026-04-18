@@ -1,0 +1,90 @@
+#!/bin/bash
+DF='\e[39m'
+Bold='\e[1m'
+Blink='\e[5m'
+yell='\e[33m'
+red='\e[31m'
+blue='\e[34m'
+PURPLE='\e[35m'
+cyan='\e[36m'
+Lred='\e[91m'
+Lgreen='\e[92m'
+Lyellow='\e[93m'
+GREEN='\033[0;32m'
+ORANGE='\033[0;33m'
+LIGHT='\033[0;37m'
+grenbo="\e[92;1m"
+RED='\033[0;31m'
+NC='\e[0m'
+clear
+
+# --- FUNGSI KONVERSI ---
+function con() {
+    local -i bytes=$1;
+    if [[ $bytes -lt 1024 ]]; then
+        echo "${bytes}B"
+    elif [[ $bytes -lt 1048576 ]]; then
+        echo "$(( (bytes + 1023)/1024 ))KB"
+    elif [[ $bytes -lt 1073741824 ]]; then
+        echo "$(( (bytes + 1048575)/1048576 ))MB"
+    else
+        echo "$(( (bytes + 1073741823)/1073741824 ))GB"
+    fi
+}
+
+# --- HEADER ---
+echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+echo -e " \e[1;97;101m            CEK TROJAN ACCOUNT            \e[0m"
+echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+
+# --- AMBIL DAFTAR USER DARI KONFIGURASI XRAY ---
+data=( `cat /etc/xray/config.json | grep '^#!' | cut -d ' ' -f 2 | sort | uniq`);
+
+# --- LOOP UNTUK SETIAP USER ---
+for akun in "${data[@]}"
+do
+    # --- AMBIL INFO STATIS (LIMIT) ---
+    iplimit=$(cat /etc/hokage/limit/trojan/ip/${akun} 2>/dev/null)
+    
+    # --- AMBIL INFO KUOTA ---
+    byte_usage=$(cat /etc/trojan/${akun} 2>/dev/null)
+    gb_usage=$(con ${byte_usage})
+    
+    byte_limit=$(cat /etc/limit/trojan/${akun} 2>/dev/null)
+    gb_limit=$(con ${byte_limit})
+
+    # --- AMBIL INFO LOGIN TERAKHIR (DINAMIS) ---
+    echo -n > /tmp/iptrojan.txt
+    cat /var/log/xray/access.log | grep -w "$akun" | tail -n 500 | cut -d " " -f 3 | sed 's/tcp://g' | cut -d ":" -f 1 | sort | uniq >> /tmp/iptrojan.txt
+    jum2=$(cat /tmp/iptrojan.txt | wc -l)
+    
+    # Baris ini mengambil waktu login terakhir dari log
+    lastlogin=$(cat /var/log/xray/access.log | grep -w "$akun" | tail -n 500 | cut -d " " -f 2 | tail -1)
+
+    # --- PENENTUAN STATUS ONLINE/OFFLINE ---
+    if [[ $jum2 -gt 0 ]]; then
+        status="Online"
+    else
+        status="Offline"
+    fi
+
+    # --- TAMPILKAN OUTPUT DENGAN LOLCAT ---
+    echo -e " \033[1;36m┌──────────────────────────────────────┐\033[0m"
+    printf "    %-12s: %s\n" "UserName" "${akun}" | lolcat
+    printf "    %-12s: %s\n" "Status" "${status}" | lolcat
+    printf "    %-12s: %s\n" "Usage Quota" "${gb_usage}" | lolcat
+    printf "    %-12s: %s\n" "Limit Quota" "${gb_limit}" | lolcat
+    printf "    %-12s: %s\n" "Limit IP" "$iplimit" | lolcat
+    printf "    %-12s: %s\n" "Login IP" "$jum2" | lolcat
+    # Baris ini menampilkan waktu login terakhir. Akan kosong jika tidak ada catatan di log.
+    printf "    %-12s: %s\n" "Last Login" "$lastlogin" | lolcat
+    echo -e " \033[1;36m└──────────────────────────────────────┘\033[0m"
+
+    # Hapus file temporary
+    rm -f /tmp/iptrojan.txt
+done
+
+# --- FOOTER ---
+echo ""
+echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+echo ""

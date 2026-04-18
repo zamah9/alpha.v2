@@ -1,0 +1,86 @@
+#!/bin/bash
+# ==========================================
+# Color
+RED='\033[0;31m'
+NC='\033[0m'
+GREEN='\033[0;32m'
+ORANGE='\033[0;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+LIGHT='\033[0;37m'
+
+# Definisi fungsi green yang sebelumnya hilang/error
+function green() {
+    echo -e "${GREEN}$1${NC}"
+}
+
+CHATID=$(grep -E "^#bot# " "/etc/bot/.bot.db" | cut -d ' ' -f 3)
+KEY=$(grep -E "^#bot# " "/etc/bot/.bot.db" | cut -d ' ' -f 2)
+export TIME="10"
+export URL="https://api.telegram.org/bot$KEY/sendMessage"
+clear
+
+function notif_restore() {
+    green "Notif AddHost Tele"
+    sleep 2
+    TEXT="
+<code>◇━━━━━━━━━━━━━━◇</code>
+<b>  ⚠️ RESTORE NOTIF⚠️</b>
+<b>     Detail Restore VPS</b>
+<code>◇━━━━━━━━━━━━━━◇</code>
+<code>Restore Vps Done</code>
+<code>◇━━━━━━━━━━━━━━◇</code>
+<code>BY BOT : https://t.me/hokagelegend1</code>
+"
+    curl -s --max-time $TIME -d "chat_id=$CHATID&disable_web_page_preview=1&text=$TEXT&parse_mode=html" $URL >/dev/null
+}
+
+# ==========================================
+# Getting
+clear
+echo "Silahkan Masukin Link Backupnya"
+read -rp "Link File: " -e url
+
+# 1. Buat folder penampung dulu agar file tidak berantakan
+mkdir -p /root/backup
+
+# 2. Download file langsung ke dalam folder tersebut
+echo "Downloading backup file..."
+wget -O /root/backup/backup.zip "$url"
+
+# Cek apakah download sukses
+if [ ! -f "/root/backup/backup.zip" ]; then
+    echo -e "${RED}Download Gagal! Cek Link Google Drive Anda.${NC}"
+    exit 1
+fi
+
+# 3. Unzip spesifik ke dalam folder /root/backup
+echo "Extracting..."
+unzip -o /root/backup/backup.zip -d /root/backup
+rm -f /root/backup/backup.zip
+
+sleep 1
+echo "Start Restore..."
+
+# 4. Masuk ke folder yang sudah pasti ada isinya
+cd /root/backup
+
+# Copy file (sekarang file pasti ada di sini)
+cp passwd /etc/
+cp group /etc/
+cp shadow /etc/
+cp gshadow /etc/
+cp -r kyt /var/lib/
+cp -r xray /etc/
+cp -r html /var/www/
+cp crontab /etc/
+
+notif_restore
+
+# Bersihkan sisa file
+cd /root
+rm -rf /root/backup
+
+echo ""
+echo -e "${GREEN}Restore Berhasil!${NC}"
