@@ -1,0 +1,86 @@
+#!/bin/bash
+# ==================================================
+# AUTO INSTALLER WEB & TRIPAY PAYMENT GATEWAY
+# EFFICIENT VERSION - GITHUB ZIP EXTRACT
+# BY: HOKAGE LEGEND
+# ==================================================
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+clear
+echo -e "${YELLOW}==================================================${NC}"
+echo -e "${GREEN}  MEMULAI INSTALASI WEB & SISTEM TRIPAY HOKAGE  ${NC}"
+echo -e "${YELLOW}==================================================${NC}"
+sleep 2
+
+# 1. INSTALL DEPENDENSI (Tambahkan unzip)
+echo -e "\n[+] Menginstal dependensi (PHP, SQLite3, Unzip, dll)..."
+apt update -y
+apt install php-fpm php-curl php-json php-mysql php-sqlite3 wget unzip -y
+systemctl start php7.4-fpm
+systemctl enable php7.4-fpm
+
+# 2. PREPARASI DIREKTORI
+echo -e "\n[+] Menyiapkan direktori server..."
+mkdir -p /usr/share/nginx/html/
+mkdir -p /var/www/html/
+
+# 3. DOWNLOAD DAN EKSTRAK FILE WEB DARI GITHUB
+echo -e "\n[+] Mendownload file web.zip dari GitHub..."
+cd /tmp
+rm -rf web web.zip # Bersihkan sisa unduhan sebelumnya jika ada
+wget -O web.zip "https://raw.githubusercontent.com/zamah9/alpha.v2/main/web.zip"
+
+echo -e "[+] Mengekstrak file web.zip..."
+mkdir -p /tmp/web
+unzip -o web.zip -d /tmp/web/
+
+# 4. DISTRIBUSI FILE KE FOLDER MASING-MASING
+echo -e "\n[+] Mendistribusikan file ke jalurnya masing-masing..."
+
+# A. Pindahkan file statis utama ke Nginx root (Port 80/443)
+cp -f /tmp/web/index.html /usr/share/nginx/html/
+cp -f /tmp/web/logo.png /usr/share/nginx/html/
+cp -f /usr/share/nginx/html/index.html /usr/share/nginx/html/index.nginx-debian.html
+
+# B. Pindahkan file PHP dan Database ke /var/www/html (Port 81)
+cp -f /tmp/web/*.php /var/www/html/
+cp -f /tmp/web/web_users.db /var/www/html/
+cp -f /tmp/web/logo.png /var/www/html/ # Backup logo jika sewaktu-waktu dibutuhkan di halaman login
+
+# Bersihkan file sampah instalasi
+rm -rf /tmp/web /tmp/web.zip
+
+# 5. KONFIGURASI NGINX UNTUK PHP DI PORT 81
+echo -e "\n[+] Konfigurasi Nginx agar membaca PHP di Port 81..."
+if ! grep -q "location ~ \\.php\$" /etc/nginx/conf.d/xray.conf; then
+    sed -i '/root \/var\/www\/html;/a \    index index.php index.html index.htm;\n    location ~ \\.php$ {\n        include snippets\/fastcgi-php.conf;\n        fastcgi_pass unix:\/var\/run\/php\/php7.4-fpm.sock;\n    }' /etc/nginx/conf.d/xray.conf
+fi
+
+# 6. MENGATUR IZIN FOLDER & DATABASE
+echo -e "\n[+] Mengatur Perizinan Folder dan Database..."
+# Izin folder utama
+chown -R www-data:www-data /var/www/html /usr/share/nginx/html
+chmod -R 775 /var/www/html /usr/share/nginx/html
+
+# Izin tulis penuh untuk database web (Register/Login)
+if [ -f "/var/www/html/web_users.db" ]; then
+    chmod 666 /var/www/html/web_users.db
+fi
+
+# Izin tulis penuh untuk database Bot Telegram (Auto-Saldo)
+if [ -f "/usr/bin/kyt/database.db" ]; then
+    chown www-data:www-data /usr/bin/kyt/database.db
+    chmod 666 /usr/bin/kyt/database.db
+fi
+
+# 7. RESTART SERVICE
+echo -e "\n[+] Merestart layanan Nginx & PHP..."
+nginx -t && systemctl restart nginx php7.4-fpm
+
+echo -e "${YELLOW}==================================================${NC}"
+echo -e "${GREEN}INSTALASI SELESAI!${NC}"
+echo -e "Catatan: Jika API Key Tripay di dalam file .zip belum diubah,"
+echo -e "silakan edit manual di: ${YELLOW}/var/www/html/checkout.php${NC}"
+echo -e "${YELLOW}==================================================${NC}"
