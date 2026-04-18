@@ -1,0 +1,278 @@
+#!/bin/bash
+export DEBIAN_FRONTEND=noninteractive
+OS=`uname -m`;
+MYIP=$(wget -qO- ipinfo.io/ip);
+domain=$(cat /root/domain)
+MYIP2="s/xxxxxxxxx/$domain/g";
+
+# --- 1. INSTALL OVPN ---
+function ovpn_install() {
+    rm -rf /etc/openvpn
+    mkdir -p /etc/openvpn
+    # Perbaikan link github agar menggunakan RAW (lebih stabil)
+    wget -O /etc/openvpn/vpn.zip "https://github.com/zamah9/alpha.v2/raw/refs/heads/main/config/vpn.zip" >/dev/null 2>&1
+    unzip -d /etc/openvpn/ /etc/openvpn/vpn.zip
+    rm -f /etc/openvpn/vpn.zip
+    chown -R root:root /etc/openvpn/server/easy-rsa/
+}
+
+# --- 2. KONFIGURASI SERVER ---
+function config_easy() {
+    cd
+    mkdir -p /usr/lib/openvpn/
+    cp /usr/lib/x86_64-linux-gnu/openvpn/plugins/openvpn-plugin-auth-pam.so /usr/lib/openvpn/openvpn-plugin-auth-pam.so
+    sed -i 's/#AUTOSTART="all"/AUTOSTART="all"/g' /etc/default/openvpn
+    systemctl enable --now openvpn-server@server-tcp
+    systemctl enable --now openvpn-server@server-udp
+    /etc/init.d/openvpn restart
+}
+
+# --- 3. MEMBUAT CONFIG CLIENT ---
+function make_follow() {
+    echo 1 > /proc/sys/net/ipv4/ip_forward
+    sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/g' /etc/sysctl.conf
+
+    # TCP Config
+cat > /etc/openvpn/tcp.ovpn <<-END
+client
+dev tun
+proto tcp
+remote xxxxxxxxx 1194
+resolv-retry infinite
+route-method exe
+nobind
+persist-key
+persist-tun
+auth-user-pass
+comp-lzo
+verb 3
+END
+    sed -i $MYIP2 /etc/openvpn/tcp.ovpn;
+
+    # UDP Config
+cat > /etc/openvpn/udp.ovpn <<-END
+client
+dev tun
+proto udp
+remote xxxxxxxxx 2200
+resolv-retry infinite
+route-method exe
+nobind
+persist-key
+persist-tun
+auth-user-pass
+comp-lzo
+verb 3
+END
+    sed -i $MYIP2 /etc/openvpn/udp.ovpn;
+
+    # WS SSL Config
+cat > /etc/openvpn/ws-ssl.ovpn <<-END
+client
+dev tun
+proto tcp
+remote xxxxxxxxx 443
+resolv-retry infinite
+route-method exe
+nobind
+persist-key
+persist-tun
+auth-user-pass
+comp-lzo
+verb 3
+END
+    sed -i $MYIP2 /etc/openvpn/ws-ssl.ovpn;
+
+    # SSL Config
+cat > /etc/openvpn/ssl.ovpn <<-END
+client
+dev tun
+proto tcp
+remote xxxxxxxxx 443
+resolv-retry infinite
+route-method exe
+nobind
+persist-key
+persist-tun
+auth-user-pass
+comp-lzo
+verb 3
+END
+    sed -i $MYIP2 /etc/openvpn/ssl.ovpn;
+}
+
+# --- 4. PEMBUATAN FILE WEB & DOWNLOAD LOGO ---
+function cert_ovpn() {
+    # Generate CA ke dalam file config
+    echo '<ca>' >> /etc/openvpn/tcp.ovpn
+    cat /etc/openvpn/server/ca.crt >> /etc/openvpn/tcp.ovpn
+    echo '</ca>' >> /etc/openvpn/tcp.ovpn
+    cp /etc/openvpn/tcp.ovpn /var/www/html/tcp.ovpn
+
+    echo '<ca>' >> /etc/openvpn/udp.ovpn
+    cat /etc/openvpn/server/ca.crt >> /etc/openvpn/udp.ovpn
+    echo '</ca>' >> /etc/openvpn/udp.ovpn
+    cp /etc/openvpn/udp.ovpn /var/www/html/udp.ovpn
+
+    echo '<ca>' >> /etc/openvpn/ws-ssl.ovpn
+    cat /etc/openvpn/server/ca.crt >> /etc/openvpn/ws-ssl.ovpn
+    echo '</ca>' >> /etc/openvpn/ws-ssl.ovpn
+    cp /etc/openvpn/ws-ssl.ovpn /var/www/html/ws-ssl.ovpn
+
+    echo '<ca>' >> /etc/openvpn/ssl.ovpn
+    cp /etc/openvpn/ws-ssl.ovpn /var/www/html/ssl.ovpn
+
+    # Zip Semua Config
+    cd /var/www/html/
+    zip Kyt-Project.zip tcp.ovpn udp.ovpn ssl.ovpn ws-ssl.ovpn > /dev/null 2>&1
+
+    # --- DOWNLOAD LOGO ---
+    # Mengambil logo.png dari GitHub Anda
+    rm -f /var/www/html/logo.png /var/www/html/logo.jpg
+    wget -q -O /var/www/html/logo.png "https://raw.githubusercontent.com/zamah9/alpha.v2/main/ssh/logo.png"
+    
+    # Fallback jika logo gagal didownload (pakai placeholder)
+    if [ ! -f /var/www/html/logo.png ]; then
+        wget -q -O /var/www/html/logo.png "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Python-logo-notext.svg/1200px-Python-logo-notext.svg.png"
+    fi
+
+    # --- BUAT HALAMAN VIEWER (Lihat Config) ---
+cat <<'EOF' > /var/www/html/view.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Config Viewer | HOKAGE</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.8.2/css/all.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root { --bg-gradient: linear-gradient(135deg, #1e3c72, #2a5298, #fdbb2d); }
+        body { background: var(--bg-gradient); background-attachment: fixed; font-family: 'Segoe UI', monospace; min-height: 100vh; display: flex; align-items: center; color: white; }
+        .glass-card { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(15px); border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.2); padding: 2rem; margin: 20px auto; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); width: 95%; max-width: 800px; }
+        textarea { width: 100%; height: 400px; background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.1); color: #00ff9d; font-family: 'Consolas', monospace; padding: 15px; border-radius: 10px; font-size: 0.85rem; resize: none; outline: none; }
+        .btn-custom { border-radius: 50px; font-weight: bold; padding: 10px 25px; margin: 5px; }
+        .btn-copy { background: linear-gradient(45deg, #FFC107, #ff8b00); border: none; color: #000; }
+        .btn-down { background: linear-gradient(45deg, #11998e, #38ef7d); border: none; color: #fff; }
+        .btn-back { background: rgba(255,255,255,0.2); color: #fff; }
+        h3 { font-weight: 700; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="glass-card text-center">
+            <h3 id="titleConfig">LOADING...</h3>
+            <p class="text-white-50">Salin konfigurasi di bawah atau download file</p>
+            <textarea id="configText" readonly>Memuat konfigurasi...</textarea>
+            <div class="mt-4">
+                <button onclick="copyText()" class="btn btn-custom btn-copy"><i class="fas fa-copy"></i> Copy</button>
+                <a id="downLink" href="#" class="btn btn-custom btn-down"><i class="fas fa-download"></i> Download .OVPN</a>
+            </div>
+            <div class="mt-3">
+                <a href="index.html" class="btn btn-sm btn-back"><i class="fas fa-arrow-left"></i> Kembali</a>
+            </div>
+        </div>
+    </div>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const id = urlParams.get('id');
+        const fileMap = { 'tcp': 'tcp.ovpn', 'udp': 'udp.ovpn', 'ssl': 'ssl.ovpn', 'ws-ssl': 'ws-ssl.ovpn' };
+        if(id && fileMap[id]) {
+            document.getElementById('titleConfig').innerText = id.toUpperCase() + ' CONFIG';
+            document.getElementById('downLink').href = fileMap[id];
+            fetch(fileMap[id]).then(r => r.text()).then(t => document.getElementById('configText').value = t).catch(e => document.getElementById('configText').value = "Gagal memuat file.");
+        } else { document.getElementById('titleConfig').innerText = "FILE NOT FOUND"; }
+        function copyText() {
+            var copyText = document.getElementById("configText");
+            copyText.select();
+            document.execCommand("copy");
+            alert("Config berhasil disalin!");
+        }
+    </script>
+</body>
+</html>
+EOF
+
+    # --- BUAT HALAMAN INDEX UTAMA (Glassmorphism) ---
+cat <<'EOF' > /var/www/html/index.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>HOKAGE LEGEND | Download Config</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.8.2/css/all.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root { --bg-gradient: linear-gradient(135deg, #1e3c72, #2a5298, #fdbb2d); }
+        body { background: var(--bg-gradient); background-attachment: fixed; font-family: 'Segoe UI', sans-serif; min-height: 100vh; display: flex; align-items: center; }
+        .glass-card { background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(10px); border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.2); color: white; padding: 2.5rem; margin: 20px auto; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); }
+        .brand-logo { width: 140px; height: auto; border-radius: 15px; display: block; margin: 0 auto 1.5rem; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .config-item { background: rgba(255, 255, 255, 0.1); border-radius: 12px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; transition: 0.3s; }
+        .config-item:hover { background: rgba(255, 255, 255, 0.25); transform: translateY(-3px); }
+        .badge-custom { background: rgba(0, 123, 255, 0.6); color: #fff; padding: 5px 10px; }
+        .btn-download { background: linear-gradient(45deg, #11998e, #38ef7d); border: none; color: white !important; border-radius: 50px; padding: 8px 25px; transition: 0.3s; }
+        .btn-download:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(56, 239, 125, 0.4); }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-5">
+            <div class="glass-card text-center">
+                <img src="logo.png" alt="Hokage Legend" class="brand-logo">
+                
+                <h2 class="mb-1" style="font-weight:700; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">HOKAGE LEGEND</h2>
+                <p class="text-white-50 mb-4">Secure VPN Tunnel Connection</p>
+
+                <div class="text-left">
+                    <div class="config-item">
+                        <div><h6 class="mb-1 font-weight-bold"><i class="fas fa-network-wired mr-2"></i>TCP OVPN</h6><span class="badge badge-pill badge-custom">Universal</span></div>
+                        <a href="view.html?id=tcp" class="btn btn-download btn-sm"><i class="fa fa-eye"></i></a>
+                    </div>
+                    <div class="config-item">
+                        <div><h6 class="mb-1 font-weight-bold"><i class="fas fa-gamepad mr-2"></i>UDP OVPN</h6><span class="badge badge-pill badge-custom">Game / VC</span></div>
+                        <a href="view.html?id=udp" class="btn btn-download btn-sm"><i class="fa fa-eye"></i></a>
+                    </div>
+                    <div class="config-item">
+                        <div><h6 class="mb-1 font-weight-bold"><i class="fas fa-shield-alt mr-2"></i>SSL OVPN</h6><span class="badge badge-pill badge-custom">Secure</span></div>
+                        <a href="view.html?id=ssl" class="btn btn-download btn-sm"><i class="fa fa-eye"></i></a>
+                    </div>
+                    <div class="config-item">
+                        <div><h6 class="mb-1 font-weight-bold"><i class="fas fa-globe mr-2"></i>WS SSL</h6><span class="badge badge-pill badge-custom">Cloudflare</span></div>
+                        <a href="view.html?id=ws-ssl" class="btn btn-download btn-sm"><i class="fa fa-eye"></i></a>
+                    </div>
+                    <div class="config-item" style="background: rgba(255, 193, 7, 0.15);">
+                        <div><h6 class="mb-1 font-weight-bold text-warning"><i class="fas fa-file-archive mr-2"></i>All Configs</h6><span class="badge badge-pill badge-warning" style="color:#333">Pack .zip</span></div>
+                        <a href="Kyt-Project.zip" class="btn btn-warning btn-sm" style="border-radius: 50px;"><i class="fa fa-download"></i></a>
+                    </div>
+                </div>
+                <div class="mt-4"><small class="text-white-50">Auto Installer by Hokage Legend</small></div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
+EOF
+
+    # --- Finishing (Permission & IP Replacement) ---
+    sed -i "s|IP-ADDRESSS|$(curl -sS ifconfig.me)|g" /var/www/html/index.html
+    chmod 755 /var/www/html/index.html
+    chmod 755 /var/www/html/view.html
+    chmod 644 /var/www/html/logo.png
+}
+
+function install_ovpn() {
+    ovpn_install
+    config_easy
+    make_follow
+    make_follow
+    cert_ovpn
+    systemctl enable openvpn
+    systemctl start openvpn
+    /etc/init.d/openvpn restart
+}
+
+# Jalankan Installer
+install_ovpn
